@@ -1,0 +1,170 @@
+from searchlib.core.observation import Observation
+from searchlib.strategies.coarse_fine import (
+    CoarseFineConfig,
+    CoarseFineSearch,
+)
+
+
+def run_search(search, function):
+    search.start()
+
+    while True:
+        request = search.get_next_request()
+
+        if request is None:
+            break
+
+        value = function(request.parameter)
+
+        search.submit_observation(
+            Observation(
+                request_id=request.request_id,
+                parameter=request.parameter,
+                value=value,
+            )
+        )
+
+    return search.result
+
+
+def test_finds_maximum():
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="maximize",
+        )
+    )
+
+    result = run_search(
+        search,
+        lambda x: -((x - 63) ** 2),
+    )
+
+    assert result is not None
+    assert result.best_parameter == 65
+    assert result.best_value == -4
+
+
+def test_finds_minimum():
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="minimize",
+        )
+    )
+
+    result = run_search(
+        search,
+        lambda x: (x - 63) ** 2,
+    )
+
+    assert result is not None
+    assert result.best_parameter == 65
+    assert result.best_value == 4
+
+
+def test_maximum_at_start():
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="maximize",
+        )
+    )
+
+    result = run_search(
+        search,
+        lambda x: -((x + 10) ** 2),
+    )
+
+    assert result is not None
+    assert result.best_parameter == 0
+
+
+def test_maximum_at_stop():
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="maximize",
+        )
+    )
+
+    result = run_search(
+        search,
+        lambda x: -((x - 110) ** 2),
+    )
+
+    assert result is not None
+    assert result.best_parameter == 100
+
+
+def test_fine_search_improves_coarse_result():
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="maximize",
+        )
+    )
+
+    result = run_search(
+        search,
+        lambda x: -((x - 63) ** 2),
+    )
+
+    assert result is not None
+
+    # Coarse search would find 60.
+    # Fine search should improve this to 65.
+    assert result.best_parameter != 60
+    assert result.best_parameter == 65
+
+
+# not really interesting
+def test_finds_maximum_with_noise():
+    values = {
+        0: 0.1,
+        20: 0.3,
+        40: 0.6,
+        60: 0.9,
+        80: 0.5,
+        100: 0.2,
+    }
+
+    search = CoarseFineSearch(
+        CoarseFineConfig(
+            start=0,
+            stop=100,
+            coarse_step=20,
+            fine_step=5,
+            objective="maximize",
+        )
+    )
+
+    # this curious lambda x: values.get(x, 0.8) is equivalent to the following function:
+    # def function(x):
+    #     if x in values:
+    #         return values[x]
+
+    #     return 0.8
+
+    result = run_search(
+        search,
+        lambda x: values.get(x, 0.8),
+    )
+
+    assert result is not None
+    assert result.best_parameter == 60
