@@ -1,4 +1,5 @@
 import math
+import threading
 
 from searchlib.core.observation import Observation
 from searchlib.strategies.coarse_fine import (
@@ -222,3 +223,103 @@ def test_four_motor_position_searches():
         3840,
         3850,
     ]
+
+
+def test_four_motor_position_searches_parallel():
+    """
+    Simulate four independent coarse/fine searches running
+    concurrently, one per motor.
+    """
+
+    target_positions = [3810, 3820, 3840, 3850]
+
+    def make_focus_measure(target: int, peak: float):
+        def focus_measure(position: int) -> float:
+            return peak * math.exp(-(((position - target) / 100) ** 2))
+
+        return focus_measure
+
+    focus_measures = [
+        make_focus_measure(3810, 1.00),
+        make_focus_measure(3820, 0.85),
+        make_focus_measure(3840, 1.20),
+        make_focus_measure(3850, 0.95),
+    ]
+
+    results = [None] * 4
+    errors = [None] * 4
+
+    def search_motor(
+        motor_number: int,
+        focus_measure,
+    ) -> None:
+        try:
+            search = CoarseFineSearch(
+                CoarseFineConfig(
+                    start=2200,
+                    stop=4800,
+                    coarse_step=100,
+                    fine_step=10,
+                    objective="maximize",
+                )
+            )
+
+            search.start()
+
+            while True:
+                request = search.get_next_request()
+
+                if request is None:
+                    break
+
+                assert request is not None
+
+                value = focus_measure(request.parameter)
+
+                search.submit_observation(
+                    Observation(
+                        request_id=request.request_id,
+                        parameter=request.parameter,
+                        value=value,
+                    )
+                )
+
+            results[motor_number] = search.result
+
+        except Exception as error:
+            errors[motor_number] = error
+
+    threads = [
+        threading.Thread(
+            target=search_motor,
+            args=(motor_number, focus_measure),
+            name=f"MotorSearch-{motor_number + 1}",
+        )
+        for motor_number, focus_measure in enumerate(focus_measures)
+    ]
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
+
+    # Make failures inside the worker threads visible to pytest.
+    for error in errors:
+        if error is not None:
+            raise error
+
+    assert all(result is not None for result in results)
+
+    positions = [result.best_parameter for result in results]
+
+    print("\nParallel search results:")
+
+    for motor_number, position in enumerate(positions, start=1):
+        print(
+            f"  Motor {motor_number}: "
+            f"{position} "
+            f"(target={target_positions[motor_number - 1]})"
+        )
+
+    assert positions == target_positions
