@@ -6,4 +6,4 @@ from typing import Any
 class Observation:
     request_id: int
     parameter: Any
-    value: float
+    value: Any

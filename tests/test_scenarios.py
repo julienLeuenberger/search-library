@@ -1,3 +1,5 @@
+import math
+
 from searchlib.core.observation import Observation
 from searchlib.strategies.coarse_fine import (
     CoarseFineConfig,
@@ -168,3 +170,55 @@ def test_finds_maximum_with_noise():
 
     assert result is not None
     assert result.best_parameter == 60
+
+
+def test_four_motor_position_searches():
+    """
+    Simulate four independent coarse/fine searches over
+    the motor range 2200..4800.
+
+    Each motor has its own focus curve and therefore
+    its own optimal position.
+    """
+
+    target_positions = [3810, 3820, 3840, 3850]
+
+    def make_focus_measure(target, peak):
+        def focus_measure(position):
+            return peak * math.exp(-(((position - target) / 100) ** 2))
+
+        return focus_measure
+
+    focus_measures = [
+        make_focus_measure(3810, 1.00),
+        make_focus_measure(3820, 0.85),
+        make_focus_measure(3840, 1.20),
+        make_focus_measure(3850, 0.95),
+    ]
+
+    results = []
+
+    for focus_measure in focus_measures:
+        search = CoarseFineSearch(
+            CoarseFineConfig(
+                start=2200,
+                stop=4800,
+                coarse_step=100,
+                fine_step=10,
+                objective="maximize",
+            )
+        )
+
+        result = run_search(search, focus_measure)
+
+        assert result is not None
+        results.append(result)
+
+    positions = [result.best_parameter for result in results]
+
+    assert positions == [
+        3810,
+        3820,
+        3840,
+        3850,
+    ]

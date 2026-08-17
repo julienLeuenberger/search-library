@@ -15,5 +15,5 @@ class SearchStatus(Enum):
 class SearchResult:
     status: SearchStatus
     best_parameter: Any | None
-    best_value: float | None
+    best_value: Any | None
     observations: tuple[Observation, ...]
